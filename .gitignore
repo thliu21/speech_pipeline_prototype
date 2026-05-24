@@ -1,0 +1,14 @@
+.venv/
+.uv-cache/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.pyc
+
+models/
+logs/
+*.jsonl
+*.wav
+*.flac
+*.mp3
+!samples/README.md

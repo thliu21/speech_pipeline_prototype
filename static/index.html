@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pi5 Speech Pipeline</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <h1>Pi5 Speech Pipeline</h1>
+          <p id="status-line">Connecting...</p>
+        </div>
+        <div class="actions">
+          <button id="refresh-devices" type="button">Refresh Devices</button>
+          <button id="start-mic" type="button" class="primary">Start Mic</button>
+          <button id="stop" type="button">Stop</button>
+        </div>
+      </header>
+
+      <section class="control-grid">
+        <div class="panel source-panel">
+          <div class="panel-head">
+            <h2>Input</h2>
+            <span id="running-pill" class="pill">idle</span>
+          </div>
+          <label for="device-select">Microphone</label>
+          <select id="device-select"></select>
+          <div id="device-detail" class="detail">No device loaded.</div>
+          <label for="wav-path">WAV Replay</label>
+          <div class="inline">
+            <input id="wav-path" type="text" placeholder="samples/example.wav" />
+            <button id="run-wav" type="button">Run WAV</button>
+          </div>
+          <label class="checkline">
+            <input id="wav-realtime" type="checkbox" checked />
+            Replay at real-time speed
+          </label>
+        </div>
+
+        <div class="panel state-panel">
+          <div class="panel-head">
+            <h2>Runtime</h2>
+            <span id="vad-pill" class="pill">silence</span>
+          </div>
+          <div class="level-row">
+            <span>Audio level</span>
+            <div class="level-track"><div id="audio-level" class="level-fill"></div></div>
+          </div>
+          <dl class="state-list">
+            <div><dt>Current source</dt><dd id="current-source">-</dd></div>
+            <div><dt>Input device</dt><dd id="input-device">-</dd></div>
+            <div><dt>Queue depth</dt><dd id="queue-depth">0</dd></div>
+            <div><dt>Last error</dt><dd id="last-error">-</dd></div>
+          </dl>
+        </div>
+      </section>
+
+      <section class="metric-grid" id="metric-grid">
+        <article class="metric-card" data-stage="capture">
+          <h3>Capture</h3>
+          <p><strong>0.0</strong><span>latest ms</span></p>
+          <small>avg 0.0 / p95 0.0</small>
+        </article>
+        <article class="metric-card" data-stage="preprocess">
+          <h3>Preprocess</h3>
+          <p><strong>0.0</strong><span>latest ms</span></p>
+          <small>avg 0.0 / p95 0.0</small>
+        </article>
+        <article class="metric-card" data-stage="vad">
+          <h3>VAD</h3>
+          <p><strong>0.0</strong><span>latest ms</span></p>
+          <small>avg 0.0 / p95 0.0</small>
+        </article>
+        <article class="metric-card" data-stage="segment">
+          <h3>Segment</h3>
+          <p><strong>0.0</strong><span>latest ms</span></p>
+          <small>avg 0.0 / p95 0.0</small>
+        </article>
+        <article class="metric-card" data-stage="asr">
+          <h3>ASR</h3>
+          <p><strong>0.0</strong><span>latest ms</span></p>
+          <small>avg 0.0 / p95 0.0</small>
+        </article>
+      </section>
+
+      <section class="content-grid">
+        <div class="panel transcript-panel">
+          <div class="panel-head">
+            <h2>Transcript</h2>
+            <button id="clear-transcript" type="button">Clear</button>
+          </div>
+          <div id="partial" class="partial"></div>
+          <div id="transcript" class="transcript"></div>
+        </div>
+        <div class="panel event-panel">
+          <div class="panel-head">
+            <h2>Events</h2>
+            <span id="ws-state" class="pill">socket</span>
+          </div>
+          <ol id="events" class="events"></ol>
+        </div>
+      </section>
+    </main>
+    <script src="/static/app.js"></script>
+  </body>
+</html>
+
