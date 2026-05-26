@@ -53,10 +53,10 @@ class WebRtcPreprocessor:
         )
 
 
-def create_preprocessor(mode: str) -> PassthroughPreprocessor | WebRtcPreprocessor:
+def create_preprocessor(mode: str, vad_threshold: float = 0.012) -> PassthroughPreprocessor | WebRtcPreprocessor:
     normalized = mode.lower().strip()
     if normalized in {"off", "none", "passthrough", "mock"}:
-        return PassthroughPreprocessor()
+        return PassthroughPreprocessor(vad_threshold=vad_threshold)
     if normalized in {"webrtc", "webrtc-noise-gain", "light"}:
         return WebRtcPreprocessor()
     raise ValueError(f"Unsupported denoise mode: {mode}")
@@ -65,4 +65,3 @@ def create_preprocessor(mode: str) -> PassthroughPreprocessor | WebRtcPreprocess
 def _validate_frame(frame: bytes) -> None:
     if len(frame) != BYTES_PER_FRAME:
         raise ValueError(f"Expected {BYTES_PER_FRAME} bytes for a 10ms 16kHz frame, got {len(frame)}")
-

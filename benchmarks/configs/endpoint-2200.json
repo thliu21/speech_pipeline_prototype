@@ -1,0 +1,20 @@
+{
+  "name": "endpoint-2200",
+  "pipeline": {
+    "asr_mode": "sherpa",
+    "denoise": "off",
+    "model_dir": "models/sherpa-onnx-streaming-zipformer-en-2023-06-21",
+    "provider": "cpu",
+    "num_threads": 2,
+    "decoding_method": "greedy_search",
+    "max_active_paths": 4,
+    "use_int8": true,
+    "decode_every_ms": 100,
+    "context_padding_ms": 500,
+    "vad_threshold": 0.012,
+    "speech_start_frames": 3,
+    "pre_roll_ms": 500,
+    "soft_end_ms": 1200,
+    "silence_end_ms": 2200
+  }
+}

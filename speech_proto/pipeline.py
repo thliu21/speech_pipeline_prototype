@@ -19,6 +19,7 @@ from .events import EventHub
 from .metrics import LatencyTracker
 from .preprocess import PassthroughPreprocessor, create_preprocessor
 from .segmenter import SegmentEvent, VadSegmenter
+from .transcript_assembler import TranscriptAssembler
 
 
 @dataclass(frozen=True)
@@ -27,11 +28,21 @@ class PipelineConfig:
     device_id: int | None = None
     wav_path: str | None = None
     wav_realtime: bool = True
-    denoise: str = "webrtc"
+    denoise: str = "off"
     asr_mode: str = "sherpa"
     model_dir: str = str(Path("models") / DEFAULT_MODEL_NAME)
     provider: str = "cpu"
     num_threads: int = 1
+    decoding_method: str = "greedy_search"
+    max_active_paths: int = 4
+    use_int8: bool = True
+    decode_every_ms: int = 100
+    context_padding_ms: int = 800
+    vad_threshold: float = 0.012
+    speech_start_frames: int = 3
+    silence_end_ms: int = 1400
+    pre_roll_ms: int = 800
+    soft_end_ms: int = 700
     jsonl_log: str | None = None
     reference_text: str | None = None
 
@@ -71,8 +82,13 @@ class PipelineRunner:
         self.hub = hub
         self.stop_event = stop_event or asyncio.Event()
         self.latencies = LatencyTracker()
-        self.segmenter = VadSegmenter()
-        self.final_transcripts: list[str] = []
+        self.segmenter = VadSegmenter(
+            speech_start_frames=config.speech_start_frames,
+            silence_end_ms=config.silence_end_ms,
+            pre_roll_ms=config.pre_roll_ms,
+            soft_end_ms=config.soft_end_ms,
+        )
+        self.transcripts = TranscriptAssembler()
         self.total_frames = 0
         self.input_name = ""
 
@@ -86,6 +102,11 @@ class PipelineRunner:
                     model_dir=self.config.model_dir,
                     provider=self.config.provider,
                     num_threads=self.config.num_threads,
+                    decoding_method=self.config.decoding_method,
+                    max_active_paths=self.config.max_active_paths,
+                    use_int8=self.config.use_int8,
+                    decode_every_ms=self.config.decode_every_ms,
+                    context_padding_ms=self.config.context_padding_ms,
                 )
                 source = self._create_source()
                 await self.hub.publish(
@@ -117,7 +138,7 @@ class PipelineRunner:
 
     def _create_preprocessor(self):
         try:
-            return create_preprocessor(self.config.denoise)
+            return create_preprocessor(self.config.denoise, vad_threshold=self.config.vad_threshold)
         except RuntimeError as exc:
             if self.config.asr_mode.lower() == "mock":
                 return PassthroughPreprocessor()
@@ -219,16 +240,19 @@ class PipelineRunner:
         await self.hub.publish("segment", payload)
 
     async def _publish_transcript(self, transcript: Transcript, recorder: JsonlRecorder) -> None:
-        payload = transcript.as_payload()
         if transcript.type == "final":
-            self.final_transcripts.append(transcript.text)
+            recorder.write({"type": "raw_transcript", "payload": transcript.as_payload()})
+        update = self.transcripts.process(transcript)
+        if update is None:
+            return
+        payload = update.as_payload()
         recorder.write({"type": "transcript", "payload": payload})
         await self.hub.publish("transcript", payload)
 
     def _summary(self, clock: RunClock) -> PipelineSummary:
         audio_duration_sec = self.total_frames * FRAME_MS / 1000.0
         wall_time_sec = clock.elapsed_sec()
-        transcript = " ".join(self.final_transcripts).strip()
+        transcript = self.transcripts.transcript
         score = score_transcript(self.config.reference_text, transcript).as_dict()
         return PipelineSummary(
             source=self.config.source,
@@ -246,10 +270,12 @@ class PipelineController:
     def __init__(
         self,
         default_asr: str = "sherpa",
-        default_denoise: str = "webrtc",
+        default_denoise: str = "off",
         default_model_dir: str = str(Path("models") / DEFAULT_MODEL_NAME),
         provider: str = "cpu",
         num_threads: int = 1,
+        decoding_method: str = "greedy_search",
+        max_active_paths: int = 4,
     ) -> None:
         self.hub = EventHub()
         self.status = PipelineStatus(device=provider)
@@ -259,6 +285,8 @@ class PipelineController:
         self.default_model_dir = default_model_dir
         self.provider = provider
         self.num_threads = num_threads
+        self.decoding_method = decoding_method
+        self.max_active_paths = max_active_paths
         self._task: asyncio.Task | None = None
         self._stop_event: asyncio.Event | None = None
         self._lock = asyncio.Lock()
@@ -283,6 +311,8 @@ class PipelineController:
             model_dir=self.default_model_dir,
             provider=self.provider,
             num_threads=self.num_threads,
+            decoding_method=self.decoding_method,
+            max_active_paths=self.max_active_paths,
         )
         await self._start(config)
 
@@ -296,6 +326,8 @@ class PipelineController:
             model_dir=self.default_model_dir,
             provider=self.provider,
             num_threads=self.num_threads,
+            decoding_method=self.decoding_method,
+            max_active_paths=self.max_active_paths,
             reference_text=reference_text,
         )
         await self._start(config)
@@ -346,4 +378,3 @@ class PipelineRunningError(RuntimeError):
 
 
 AudioDevicePayload = dict[str, Any]
-

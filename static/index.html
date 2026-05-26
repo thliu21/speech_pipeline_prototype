@@ -3,8 +3,9 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="Cache-Control" content="no-store" />
     <title>Pi5 Speech Pipeline</title>
-    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260525-3" />
   </head>
   <body>
     <main class="shell">
@@ -103,8 +104,31 @@
           <ol id="events" class="events"></ol>
         </div>
       </section>
+
+      <section class="panel recordings-panel">
+        <div class="panel-head">
+          <h2>Recordings</h2>
+          <span id="recording-pill" class="pill">idle</span>
+        </div>
+        <div class="recording-controls">
+          <div>
+            <label for="recording-title">Title</label>
+            <input id="recording-title" type="text" placeholder="sunnyvale baseline" />
+          </div>
+          <div>
+            <label for="recording-reference">Reference</label>
+            <textarea id="recording-reference" rows="3" placeholder="I live in Sunnyvale."></textarea>
+          </div>
+          <div class="recording-actions">
+            <button id="start-recording" type="button" class="primary">Start Recording</button>
+            <button id="stop-recording" type="button">Stop Recording</button>
+            <button id="refresh-recordings" type="button">Refresh</button>
+          </div>
+          <div id="recording-detail" class="detail">Recordings are saved on this Pi.</div>
+        </div>
+        <div id="recordings-list" class="recordings-list"></div>
+      </section>
     </main>
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=20260525-3"></script>
   </body>
 </html>
-

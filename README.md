@@ -9,8 +9,8 @@ Offline speech-to-text prototype for Raspberry Pi 5 and macOS. It has two paths:
 The intended runtime pipeline is:
 
 ```text
-selected mic or WAV -> 16 kHz mono 10 ms frames -> WebRTC NS/AGC/VAD
-  -> VAD smoothing + 500 ms pre-roll -> Sherpa-ONNX streaming ASR
+selected mic or WAV -> 16 kHz mono 10 ms frames -> light energy VAD
+  -> sentence-level VAD endpointing -> Sherpa-ONNX English streaming ASR
   -> WebSocket metrics/transcript events
 ```
 
@@ -43,13 +43,22 @@ python scripts/download_models.py
 This downloads:
 
 ```text
-models/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20
+models/sherpa-onnx-streaming-zipformer-en-2023-06-21
 ```
 
-The earlier "small 2023-02-16" model name is mainly useful for RKNN/Rockchip
-experiments. For the Python CPU prototype, this repo defaults to the official
-Sherpa-ONNX bilingual Chinese/English transducer model used in their microphone
-example.
+The pipeline is currently tuned for English-only recognition. The default model
+is the Sherpa-ONNX English streaming Zipformer trained on LibriSpeech and
+GigaSpeech. For a smaller English model, use:
+
+```bash
+python scripts/download_models.py --model english-fast
+```
+
+The previous Chinese/English bilingual model is still available for experiments:
+
+```bash
+python scripts/download_models.py --model bilingual
+```
 
 ## Run The Web UI
 
@@ -62,8 +71,11 @@ python -m speech_proto.app --asr mock --denoise off --host 0.0.0.0 --port 8080
 For real local ASR:
 
 ```bash
-python -m speech_proto.app --asr sherpa --denoise webrtc --host 0.0.0.0 --port 8080
+python -m speech_proto.app --asr sherpa --denoise off --host 0.0.0.0 --port 8080 --num-threads 2
 ```
+
+For a noisy room, try `--denoise webrtc`, but clean USB microphones often keep
+English suffixes more accurately with denoise disabled.
 
 Open:
 
@@ -91,26 +103,59 @@ Real ASR benchmark with JSONL event log and reference transcript:
 ```bash
 python -m speech_proto.cli \
   --wav samples/noisy_room_001.wav \
-  --reference "打开客厅的灯 and start recording" \
+  --reference "I live in Sunnyvale and I am testing the microphone" \
   --asr sherpa \
-  --denoise webrtc \
+  --denoise off \
   --jsonl-log logs/noisy_room_001.jsonl
 ```
 
 The summary includes wall-clock RTF, final transcript, per-stage latency
 snapshots, and optional CER/WER.
 
+## Run Streaming Benchmark Suites
+
+The benchmark suite feeds public and local audio through the same streaming
+pipeline used by the Web UI, then reports WER, boundary quality, endpoint
+latency, partial churn, and first/last word loss:
+
+```bash
+bash scripts/setup_benchmark_mac.sh
+source .venv-bench/bin/activate
+
+python -m speech_proto.benchmark_suite prepare \
+  --include local,librispeech,ljspeech \
+  --download \
+  --max-per-dataset 20 \
+  --synthetic-count 8 \
+  --out benchmarks/cache/manifest.jsonl
+
+python -m speech_proto.benchmark_suite run-stream \
+  --manifest benchmarks/cache/manifest.jsonl \
+  --config benchmarks/configs/current.json \
+  --out benchmarks/runs/current
+
+python -m speech_proto.benchmark_suite compare benchmarks/runs/current
+```
+
+Common Voice requires accepting Mozilla's dataset terms first; after downloading
+it manually, pass `--include commonvoice --commonvoice-dir <path>`.
+
 ## Benchmark Guidance
 
 Use public datasets for sanity checks, but decide hardware/model tradeoffs with
 your own noisy-room recordings:
 
-- Accuracy: CER for Chinese, WER for English, both for mixed Chinese/English.
+- Accuracy: WER for English.
 - Real time: RTF p50/p95, first partial latency, speech-end-to-final latency.
 - VAD: false alarms, missed speech, start clipping, utterance fragmentation.
 - Device: CPU, RAM, temperature, throttling, long-run stability.
 - Denoising: compare `raw -> ASR` against `denoised -> ASR`; better sounding
   audio is not always better for ASR.
+
+The current default uses 800 ms ASR context padding, 800 ms VAD pre-roll, and a
+1400 ms final endpoint with a 700 ms soft endpoint. In Mac stream benchmarks this
+reduced first/last word loss while improving balanced boundary F1 versus the
+older 500 ms padding baseline.
 
 Suggested recording matrix:
 
@@ -136,4 +181,3 @@ The unit tests do not require real microphones or model files.
 - `webrtc-noise-gain` build failure on Pi: ensure `python3-dev` and `build-essential` are installed, or run with `--denoise off`.
 - Missing model files: run `python scripts/download_models.py`, or pass `--model-dir`.
 - UI loads but real ASR fails: try `--asr mock --denoise off` first to isolate microphone/UI issues from model setup.
-

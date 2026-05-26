@@ -163,7 +163,7 @@ def choose_capture_rate(device_id: int | None) -> int:
 def require_sounddevice():
     try:
         import sounddevice as sd
-    except ImportError as exc:
+    except (ImportError, OSError) as exc:
         raise RuntimeError("sounddevice is required for microphone capture") from exc
     return sd
 
@@ -175,4 +175,3 @@ def _default_input_device_id(sd_module) -> int | None:
         value = device[0]
         return int(value) if value is not None and int(value) >= 0 else None
     return None
-

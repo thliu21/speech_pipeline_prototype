@@ -3,7 +3,7 @@ name = "speech-transcript-pipeline"
 version = "0.1.0"
 description = "Offline speech-to-text prototype for Raspberry Pi 5 with modular audio pipeline and Web UI diagnostics."
 readme = "README.md"
-requires-python = ">=3.11,<3.13"
+requires-python = ">=3.11,<3.14"
 dependencies = [
     "fastapi>=0.115.0",
     "numpy>=1.26.0",
@@ -24,6 +24,7 @@ dev = [
 [project.scripts]
 speech-proto = "speech_proto.app:main"
 speech-proto-benchmark = "speech_proto.cli:main"
+speech-proto-benchmark-suite = "speech_proto.benchmark_suite:main"
 
 [build-system]
 requires = ["hatchling"]

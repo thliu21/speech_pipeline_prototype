@@ -15,10 +15,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--wav", required=True, help="Path to a WAV file.")
     parser.add_argument("--reference", default=None, help="Optional reference transcript for CER/WER scoring.")
     parser.add_argument("--asr", default="sherpa", choices=["sherpa", "sherpa-onnx", "mock"])
-    parser.add_argument("--denoise", default="webrtc", choices=["webrtc", "off"])
+    parser.add_argument("--denoise", default="off", choices=["webrtc", "off"])
     parser.add_argument("--model-dir", default=str(Path("models") / DEFAULT_MODEL_NAME))
     parser.add_argument("--provider", default="cpu")
-    parser.add_argument("--num-threads", type=int, default=1)
+    parser.add_argument("--num-threads", type=int, default=2)
+    parser.add_argument("--decoding-method", default="greedy_search", choices=["greedy_search", "modified_beam_search"])
+    parser.add_argument("--max-active-paths", type=int, default=4)
     parser.add_argument("--jsonl-log", default=None, help="Optional JSONL event log path.")
     parser.add_argument("--realtime", action="store_true", help="Replay WAV at real-time speed.")
     return parser
@@ -35,6 +37,8 @@ async def run_async(args: argparse.Namespace) -> dict:
         model_dir=args.model_dir,
         provider=args.provider,
         num_threads=args.num_threads,
+        decoding_method=args.decoding_method,
+        max_active_paths=args.max_active_paths,
         jsonl_log=args.jsonl_log,
         reference_text=args.reference,
     )
@@ -51,4 +55,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

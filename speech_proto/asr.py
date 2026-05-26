@@ -3,9 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from .audio_utils import SAMPLE_RATE, int16_bytes_to_float32
+from .audio_utils import SAMPLE_RATE, int16_bytes_to_float32, require_numpy
 
-DEFAULT_MODEL_NAME = "sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20"
+ENGLISH_MODEL_NAME = "sherpa-onnx-streaming-zipformer-en-2023-06-21"
+BILINGUAL_MODEL_NAME = "sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20"
+DEFAULT_MODEL_NAME = ENGLISH_MODEL_NAME
 
 
 @dataclass(frozen=True)
@@ -73,17 +75,22 @@ class SherpaOnnxAsrEngine(BaseAsrEngine):
         provider: str = "cpu",
         num_threads: int = 1,
         decoding_method: str = "greedy_search",
+        max_active_paths: int = 4,
         use_int8: bool = True,
         decode_every_ms: int = 100,
+        context_padding_ms: int = 800,
     ) -> None:
         self.model_dir = Path(model_dir)
         self.provider = provider
         self.num_threads = num_threads
         self.decoding_method = decoding_method
+        self.max_active_paths = max_active_paths
         self.use_int8 = use_int8
         self.decode_every_ms = decode_every_ms
+        self.context_padding_ms = context_padding_ms
+        self._context_padding_samples = self._create_context_padding(context_padding_ms)
         self._recognizer = self._create_recognizer()
-        self._stream = self._recognizer.create_stream()
+        self._stream = self._create_stream()
         self._last_decode_ms = 0
         self._last_text = ""
 
@@ -106,15 +113,32 @@ class SherpaOnnxAsrEngine(BaseAsrEngine):
         return None
 
     def finalize(self, start_ms: int | None, end_ms: int) -> Transcript | None:
+        self._accept_context_padding(self._stream)
+        self._stream.input_finished()
         while self._recognizer.is_ready(self._stream):
             self._recognizer.decode_stream(self._stream)
         text = self._recognizer.get_result(self._stream).strip()
-        self._recognizer.reset(self._stream)
+        self._stream = self._create_stream()
         self._last_decode_ms = 0
         self._last_text = ""
         if not text:
             return None
         return Transcript("final", text, start_ms or 0, end_ms)
+
+    def _create_stream(self):
+        stream = self._recognizer.create_stream()
+        self._accept_context_padding(stream)
+        return stream
+
+    def _accept_context_padding(self, stream) -> None:
+        samples = getattr(self, "_context_padding_samples", None)
+        if samples is not None and len(samples):
+            stream.accept_waveform(SAMPLE_RATE, samples)
+
+    @staticmethod
+    def _create_context_padding(context_padding_ms: int):
+        sample_count = max(0, SAMPLE_RATE * context_padding_ms // 1000)
+        return require_numpy().zeros(sample_count, dtype="float32")
 
     def _create_recognizer(self):
         try:
@@ -131,6 +155,7 @@ class SherpaOnnxAsrEngine(BaseAsrEngine):
             sample_rate=SAMPLE_RATE,
             feature_dim=80,
             decoding_method=self.decoding_method,
+            max_active_paths=self.max_active_paths,
             provider=self.provider,
         )
 
@@ -140,24 +165,40 @@ def create_asr_engine(
     model_dir: str | Path | None = None,
     provider: str = "cpu",
     num_threads: int = 1,
+    decoding_method: str = "greedy_search",
+    max_active_paths: int = 4,
+    use_int8: bool = True,
+    decode_every_ms: int = 100,
+    context_padding_ms: int = 800,
 ) -> BaseAsrEngine:
     normalized = mode.lower().strip()
     if normalized == "mock":
         return MockAsrEngine()
     if normalized in {"sherpa", "sherpa-onnx", "real"}:
         model_path = Path(model_dir) if model_dir else Path("models") / DEFAULT_MODEL_NAME
-        return SherpaOnnxAsrEngine(model_path, provider=provider, num_threads=num_threads)
+        return SherpaOnnxAsrEngine(
+            model_path,
+            provider=provider,
+            num_threads=num_threads,
+            decoding_method=decoding_method,
+            max_active_paths=max_active_paths,
+            use_int8=use_int8,
+            decode_every_ms=decode_every_ms,
+            context_padding_ms=context_padding_ms,
+        )
     raise ValueError(f"Unsupported ASR mode: {mode}")
 
 
 def resolve_transducer_model_paths(model_dir: Path, use_int8: bool = True) -> dict[str, Path]:
     if not model_dir.is_dir():
         raise FileNotFoundError(f"Model directory does not exist: {model_dir}")
-    suffix = ".int8.onnx" if use_int8 else ".onnx"
+    encoder_suffix = ".int8.onnx" if use_int8 else ".onnx"
+    joiner_suffix = ".int8.onnx" if use_int8 else ".onnx"
     encoder = _first_existing(
         model_dir,
         [
-            f"encoder-epoch-99-avg-1{suffix}",
+            f"encoder-epoch-99-avg-1-chunk-16-left-128{encoder_suffix}",
+            f"encoder-epoch-99-avg-1{encoder_suffix}",
             "encoder-epoch-99-avg-1.onnx",
             "encoder.onnx",
         ],
@@ -165,7 +206,7 @@ def resolve_transducer_model_paths(model_dir: Path, use_int8: bool = True) -> di
     decoder = _first_existing(
         model_dir,
         [
-            f"decoder-epoch-99-avg-1{suffix}",
+            "decoder-epoch-99-avg-1-chunk-16-left-128.onnx",
             "decoder-epoch-99-avg-1.onnx",
             "decoder.onnx",
         ],
@@ -173,7 +214,8 @@ def resolve_transducer_model_paths(model_dir: Path, use_int8: bool = True) -> di
     joiner = _first_existing(
         model_dir,
         [
-            f"joiner-epoch-99-avg-1{suffix}",
+            f"joiner-epoch-99-avg-1-chunk-16-left-128{joiner_suffix}",
+            f"joiner-epoch-99-avg-1{joiner_suffix}",
             "joiner-epoch-99-avg-1.onnx",
             "joiner.onnx",
         ],
@@ -192,4 +234,3 @@ def _first_existing(model_dir: Path, names: list[str]) -> Path:
         if path.is_file():
             return path
     return model_dir / names[0]
-

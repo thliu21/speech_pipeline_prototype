@@ -26,7 +26,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -55,13 +56,19 @@ button.primary {
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   border: 1px solid var(--line);
   background: white;
   color: var(--text);
   border-radius: 7px;
   padding: 9px 10px;
+}
+
+textarea {
+  resize: vertical;
+  min-height: 76px;
 }
 
 label {
@@ -238,6 +245,80 @@ label {
   margin: 14px 0;
 }
 
+.recordings-panel {
+  margin-bottom: 14px;
+}
+
+.recording-controls {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.7fr) minmax(280px, 1.3fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.recording-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.recording-controls .detail {
+  grid-column: 1 / -1;
+  min-height: auto;
+  margin-top: 0;
+}
+
+.recordings-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.recording-item {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fbfcfe;
+}
+
+.recording-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+}
+
+.recording-title {
+  margin: 0 0 4px;
+  font-weight: 750;
+}
+
+.recording-meta {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.recording-tools {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.recording-item audio {
+  width: 100%;
+  margin-top: 10px;
+}
+
+.recording-reference-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  margin-top: 10px;
+  align-items: start;
+}
+
 .metric-card {
   padding: 14px;
 }
@@ -306,12 +387,18 @@ label {
 
   .control-grid,
   .content-grid,
-  .metric-grid {
+  .metric-grid,
+  .recording-controls,
+  .recording-row,
+  .recording-reference-row {
     grid-template-columns: 1fr;
+  }
+
+  .recording-tools {
+    justify-content: flex-start;
   }
 
   .state-list {
     grid-template-columns: 1fr;
   }
 }
-
