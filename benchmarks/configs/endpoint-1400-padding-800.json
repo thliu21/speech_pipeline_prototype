@@ -15,6 +15,7 @@
     "speech_start_frames": 3,
     "pre_roll_ms": 800,
     "soft_end_ms": 700,
-    "silence_end_ms": 1400
+    "silence_end_ms": 1400,
+    "sentence_mode": "raw"
   }
 }

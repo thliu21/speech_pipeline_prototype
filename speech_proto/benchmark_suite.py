@@ -83,6 +83,7 @@ class StreamResult:
     wer: float | None
     segment_wer: float | None
     segment_count: int
+    sentence_count: int
     expected_segment_count: int
     boundary_precision: float | None
     boundary_recall: float | None
@@ -417,6 +418,7 @@ def result_from_events(
         wer=score.wer,
         segment_wer=segment_wer(expected, finals),
         segment_count=len(finals),
+        sentence_count=len(finals),
         expected_segment_count=len(expected),
         boundary_precision=boundary["precision"],
         boundary_recall=boundary["recall"],
@@ -573,6 +575,7 @@ def summarize_group(items: list[dict[str, Any]]) -> dict[str, Any]:
         "count": len(items),
         "wer": _mean(wers),
         "segment_wer": _mean([item["segment_wer"] for item in items if item.get("segment_wer") is not None]),
+        "sentence_count": _mean([item["sentence_count"] for item in items if item.get("sentence_count") is not None]),
         "boundary_f1": _mean(boundary_f1),
         "wall_rtf": _mean(rtfs),
         "mean_endpoint_latency_ms": _mean(endpoint),

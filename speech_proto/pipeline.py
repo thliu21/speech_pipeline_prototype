@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,7 @@ from .events import EventHub
 from .metrics import LatencyTracker
 from .preprocess import PassthroughPreprocessor, create_preprocessor
 from .segmenter import SegmentEvent, VadSegmenter
+from .sentence_assembler import DEFAULT_SENTENCE_MODEL, SentenceAssembler, create_sentence_boundary_engine
 from .transcript_assembler import TranscriptAssembler
 
 
@@ -43,6 +45,8 @@ class PipelineConfig:
     silence_end_ms: int = 1400
     pre_roll_ms: int = 800
     soft_end_ms: int = 700
+    sentence_mode: str = "punct-en"
+    sentence_model: str = DEFAULT_SENTENCE_MODEL
     jsonl_log: str | None = None
     reference_text: str | None = None
 
@@ -76,11 +80,21 @@ class PipelineStatus:
         return asdict(self)
 
 
+ReadyCallback = Callable[[], Awaitable[None]]
+
+
 class PipelineRunner:
-    def __init__(self, config: PipelineConfig, hub: EventHub, stop_event: asyncio.Event | None = None) -> None:
+    def __init__(
+        self,
+        config: PipelineConfig,
+        hub: EventHub,
+        stop_event: asyncio.Event | None = None,
+        ready_callback: ReadyCallback | None = None,
+    ) -> None:
         self.config = config
         self.hub = hub
         self.stop_event = stop_event or asyncio.Event()
+        self.ready_callback = ready_callback
         self.latencies = LatencyTracker()
         self.segmenter = VadSegmenter(
             speech_start_frames=config.speech_start_frames,
@@ -88,7 +102,12 @@ class PipelineRunner:
             pre_roll_ms=config.pre_roll_ms,
             soft_end_ms=config.soft_end_ms,
         )
-        self.transcripts = TranscriptAssembler()
+        self.raw_transcripts = TranscriptAssembler()
+        self.sentences = (
+            None
+            if config.sentence_mode == "raw"
+            else SentenceAssembler(create_sentence_boundary_engine(config.sentence_mode, config.sentence_model))
+        )
         self.total_frames = 0
         self.input_name = ""
 
@@ -108,7 +127,12 @@ class PipelineRunner:
                     decode_every_ms=self.config.decode_every_ms,
                     context_padding_ms=self.config.context_padding_ms,
                 )
+                if self.sentences is not None:
+                    with self.latencies.time_stage("sentence"):
+                        await asyncio.to_thread(self.sentences.warmup)
                 source = self._create_source()
+                if self.ready_callback is not None:
+                    await self.ready_callback()
                 await self.hub.publish(
                     "pipeline_state",
                     {
@@ -242,17 +266,24 @@ class PipelineRunner:
     async def _publish_transcript(self, transcript: Transcript, recorder: JsonlRecorder) -> None:
         if transcript.type == "final":
             recorder.write({"type": "raw_transcript", "payload": transcript.as_payload()})
-        update = self.transcripts.process(transcript)
-        if update is None:
+        raw_update = self.raw_transcripts.process(transcript)
+        if raw_update is None:
             return
-        payload = update.as_payload()
-        recorder.write({"type": "transcript", "payload": payload})
-        await self.hub.publish("transcript", payload)
+        recorder.write({"type": "raw_repaired_transcript", "payload": raw_update.as_payload()})
+        if self.sentences is None:
+            updates = [raw_update]
+        else:
+            with self.latencies.time_stage("sentence"):
+                updates = self.sentences.process(raw_update)
+        for update in updates:
+            payload = update.as_payload()
+            recorder.write({"type": "transcript", "payload": payload})
+            await self.hub.publish("transcript", payload)
 
     def _summary(self, clock: RunClock) -> PipelineSummary:
         audio_duration_sec = self.total_frames * FRAME_MS / 1000.0
         wall_time_sec = clock.elapsed_sec()
-        transcript = self.transcripts.transcript
+        transcript = self.sentences.transcript if self.sentences is not None else self.raw_transcripts.transcript
         score = score_transcript(self.config.reference_text, transcript).as_dict()
         return PipelineSummary(
             source=self.config.source,
@@ -276,6 +307,8 @@ class PipelineController:
         num_threads: int = 1,
         decoding_method: str = "greedy_search",
         max_active_paths: int = 4,
+        sentence_mode: str = "punct-en",
+        sentence_model: str = DEFAULT_SENTENCE_MODEL,
     ) -> None:
         self.hub = EventHub()
         self.status = PipelineStatus(device=provider)
@@ -287,6 +320,8 @@ class PipelineController:
         self.num_threads = num_threads
         self.decoding_method = decoding_method
         self.max_active_paths = max_active_paths
+        self.sentence_mode = sentence_mode
+        self.sentence_model = sentence_model
         self._task: asyncio.Task | None = None
         self._stop_event: asyncio.Event | None = None
         self._lock = asyncio.Lock()
@@ -313,6 +348,8 @@ class PipelineController:
             num_threads=self.num_threads,
             decoding_method=self.decoding_method,
             max_active_paths=self.max_active_paths,
+            sentence_mode=self.sentence_mode,
+            sentence_model=self.sentence_model,
         )
         await self._start(config)
 
@@ -328,6 +365,8 @@ class PipelineController:
             num_threads=self.num_threads,
             decoding_method=self.decoding_method,
             max_active_paths=self.max_active_paths,
+            sentence_mode=self.sentence_mode,
+            sentence_model=self.sentence_model,
             reference_text=reference_text,
         )
         await self._start(config)
@@ -354,17 +393,21 @@ class PipelineController:
             if self.status.running:
                 raise PipelineRunningError("Pipeline is already running")
             self._stop_event = asyncio.Event()
-            runner = PipelineRunner(config, self.hub, self._stop_event)
+            runner = PipelineRunner(config, self.hub, self._stop_event, ready_callback=self._mark_model_loaded)
             self._task = asyncio.create_task(self._run_task(runner, config))
             self.status.running = True
+            self.status.model_loaded = False
             self.status.current_source = config.source
             self.status.current_input_device = str(config.device_id) if config.source == "mic" else config.wav_path
             self.status.last_error = None
 
+    async def _mark_model_loaded(self) -> None:
+        async with self._lock:
+            self.status.model_loaded = True
+
     async def _run_task(self, runner: PipelineRunner, config: PipelineConfig) -> None:
         try:
             await runner.run()
-            self.status.model_loaded = True
         except Exception as exc:
             self.status.last_error = str(exc)
         finally:

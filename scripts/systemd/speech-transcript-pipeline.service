@@ -6,7 +6,8 @@ After=network-online.target
 Type=simple
 WorkingDirectory=/home/tliu/dev/speech_transcript_pipeline
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/home/tliu/dev/speech_transcript_pipeline/.venv/bin/python -m speech_proto.app --asr sherpa --denoise off --host 0.0.0.0 --port 8080 --num-threads 2 --decoding-method greedy_search
+Environment=HF_HOME=/home/tliu/dev/speech_transcript_pipeline/models/hf-cache
+ExecStart=/home/tliu/dev/speech_transcript_pipeline/.venv/bin/python -m speech_proto.app --asr sherpa --denoise off --host 0.0.0.0 --port 8080 --num-threads 2 --decoding-method greedy_search --sentence-mode punct-en
 Restart=on-failure
 RestartSec=2
 

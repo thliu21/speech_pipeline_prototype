@@ -11,6 +11,7 @@ The intended runtime pipeline is:
 ```text
 selected mic or WAV -> 16 kHz mono 10 ms frames -> light energy VAD
   -> sentence-level VAD endpointing -> Sherpa-ONNX English streaming ASR
+  -> transcript repair -> English punctuation/sentence model
   -> WebSocket metrics/transcript events
 ```
 
@@ -60,6 +61,18 @@ The previous Chinese/English bilingual model is still available for experiments:
 python scripts/download_models.py --model bilingual
 ```
 
+## Download The Sentence Model
+
+The default UI transcript uses an English ONNX punctuation, true-casing, and
+sentence-boundary model through `punctuators`:
+
+```bash
+python scripts/download_models.py --kind sentence
+```
+
+This warms the Hugging Face cache under `models/hf-cache`. To bypass the sentence
+model and show raw ASR segments, run with `--sentence-mode raw`.
+
 ## Run The Web UI
 
 For a model-free smoke test:
@@ -72,6 +85,12 @@ For real local ASR:
 
 ```bash
 python -m speech_proto.app --asr sherpa --denoise off --host 0.0.0.0 --port 8080 --num-threads 2
+```
+
+For raw ASR text without punctuation or model-based sentence boundaries:
+
+```bash
+python -m speech_proto.app --asr sherpa --sentence-mode raw --denoise off --host 0.0.0.0 --port 8080 --num-threads 2
 ```
 
 For a noisy room, try `--denoise webrtc`, but clean USB microphones often keep
@@ -153,9 +172,11 @@ your own noisy-room recordings:
   audio is not always better for ASR.
 
 The current default uses 800 ms ASR context padding, 800 ms VAD pre-roll, and a
-1400 ms final endpoint with a 700 ms soft endpoint. In Mac stream benchmarks this
-reduced first/last word loss while improving balanced boundary F1 versus the
-older 500 ms padding baseline.
+1400 ms final endpoint with a 700 ms soft endpoint, followed by the `pcs_en`
+sentence model. In Mac stream benchmarks this reduced first/last word loss while
+improving balanced boundary F1 versus the older 500 ms padding baseline. Use
+`benchmarks/configs/current-raw.json` to compare the same ASR/VAD configuration
+without model-based punctuation and sentence segmentation.
 
 Suggested recording matrix:
 
@@ -180,4 +201,5 @@ The unit tests do not require real microphones or model files.
 - No microphone devices: check OS permissions and `python -c "import sounddevice as sd; print(sd.query_devices())"`.
 - `webrtc-noise-gain` build failure on Pi: ensure `python3-dev` and `build-essential` are installed, or run with `--denoise off`.
 - Missing model files: run `python scripts/download_models.py`, or pass `--model-dir`.
+- Missing sentence model files: run `python scripts/download_models.py --kind sentence`, or use `--sentence-mode raw`.
 - UI loads but real ASR fails: try `--asr mock --denoise off` first to isolate microphone/UI issues from model setup.

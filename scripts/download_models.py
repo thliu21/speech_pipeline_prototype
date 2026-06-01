@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import tarfile
 from pathlib import Path
@@ -17,11 +18,13 @@ MODEL_URLS = {
     "sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20.tar.bz2",
 }
 DEFAULT_MODEL_KEY = "english"
+DEFAULT_SENTENCE_MODEL = "pcs_en"
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Download Sherpa-ONNX streaming ASR models.")
-    parser.add_argument("--model", default=DEFAULT_MODEL_KEY, choices=sorted(MODEL_URLS))
+    parser = argparse.ArgumentParser(description="Download Sherpa-ONNX ASR models and sentence models.")
+    parser.add_argument("--kind", default="asr", choices=["asr", "sentence"])
+    parser.add_argument("--model", default=None)
     parser.add_argument("--url", default=None, help="Override the model URL. The directory name is inferred from the archive.")
     parser.add_argument("--out-dir", default="models")
     parser.add_argument("--force", action="store_true", help="Re-download and replace an existing model directory.")
@@ -30,9 +33,19 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = build_parser().parse_args()
+    if args.kind == "sentence":
+        download_sentence_model(args)
+        return
+    download_asr_model(args)
+
+
+def download_asr_model(args: argparse.Namespace) -> None:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    url = args.url or MODEL_URLS[args.model]
+    model_key = args.model or DEFAULT_MODEL_KEY
+    if model_key not in MODEL_URLS and not args.url:
+        raise ValueError(f"Unknown ASR model {model_key!r}; choose one of {sorted(MODEL_URLS)}")
+    url = args.url or MODEL_URLS[model_key]
     archive_path = out_dir / Path(urlparse(url).path).name
     model_dir = out_dir / archive_path.name.removesuffix(".tar.bz2")
 
@@ -48,6 +61,18 @@ def main() -> None:
     print(f"Extracting {archive_path}")
     safe_extract_tar(archive_path, out_dir)
     print(f"Ready: {model_dir}")
+
+
+def download_sentence_model(args: argparse.Namespace) -> None:
+    model_name = args.model or DEFAULT_SENTENCE_MODEL
+    cache_dir = Path(args.out_dir) / "hf-cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    os.environ.setdefault("HF_HOME", str(cache_dir))
+    print(f"Downloading sentence model {model_name} into HF_HOME={cache_dir}")
+    from speech_proto.sentence_assembler import create_sentence_boundary_engine
+
+    create_sentence_boundary_engine("punct-en", model_name).warmup()
+    print(f"Ready: {model_name}")
 
 
 def safe_extract_tar(archive_path: Path, destination: Path) -> None:

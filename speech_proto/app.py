@@ -7,6 +7,7 @@ from .asr import DEFAULT_MODEL_NAME
 from .audio_source import list_input_devices, validate_input_device
 from .pipeline import PipelineController, PipelineRunningError
 from .recordings import RecordingManager, RecordingRunningError
+from .sentence_assembler import DEFAULT_SENTENCE_MODEL
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
@@ -210,6 +211,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--num-threads", type=int, default=2)
     parser.add_argument("--decoding-method", default="greedy_search", choices=["greedy_search", "modified_beam_search"])
     parser.add_argument("--max-active-paths", type=int, default=4)
+    parser.add_argument("--sentence-mode", default="punct-en", choices=["punct-en", "raw"])
+    parser.add_argument("--sentence-model", default=DEFAULT_SENTENCE_MODEL)
     return parser
 
 
@@ -227,6 +230,8 @@ def main() -> None:
         num_threads=args.num_threads,
         decoding_method=args.decoding_method,
         max_active_paths=args.max_active_paths,
+        sentence_mode=args.sentence_mode,
+        sentence_model=args.sentence_model,
     )
     uvicorn.run(create_app(controller), host=args.host, port=args.port, ws="websockets")
 

@@ -1,5 +1,5 @@
 {
-  "name": "current",
+  "name": "current-raw",
   "pipeline": {
     "asr_mode": "sherpa",
     "denoise": "off",
@@ -16,7 +16,6 @@
     "pre_roll_ms": 800,
     "soft_end_ms": 700,
     "silence_end_ms": 1400,
-    "sentence_mode": "punct-en",
-    "sentence_model": "pcs_en"
+    "sentence_mode": "raw"
   }
 }

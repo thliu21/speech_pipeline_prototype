@@ -129,6 +129,7 @@ def test_run_stream_item_with_mock_pipeline(tmp_path):
             "pre_roll_ms": 10,
             "soft_end_ms": 50,
             "silence_end_ms": 100,
+            "sentence_mode": "raw",
         }
     }
 

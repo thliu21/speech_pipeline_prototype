@@ -8,6 +8,7 @@ from pathlib import Path
 from .asr import DEFAULT_MODEL_NAME
 from .events import EventHub
 from .pipeline import PipelineConfig, PipelineRunner
+from .sentence_assembler import DEFAULT_SENTENCE_MODEL
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -21,6 +22,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--num-threads", type=int, default=2)
     parser.add_argument("--decoding-method", default="greedy_search", choices=["greedy_search", "modified_beam_search"])
     parser.add_argument("--max-active-paths", type=int, default=4)
+    parser.add_argument("--sentence-mode", default="punct-en", choices=["punct-en", "raw"])
+    parser.add_argument("--sentence-model", default=DEFAULT_SENTENCE_MODEL)
     parser.add_argument("--jsonl-log", default=None, help="Optional JSONL event log path.")
     parser.add_argument("--realtime", action="store_true", help="Replay WAV at real-time speed.")
     return parser
@@ -39,6 +42,8 @@ async def run_async(args: argparse.Namespace) -> dict:
         num_threads=args.num_threads,
         decoding_method=args.decoding_method,
         max_active_paths=args.max_active_paths,
+        sentence_mode=args.sentence_mode,
+        sentence_model=args.sentence_model,
         jsonl_log=args.jsonl_log,
         reference_text=args.reference,
     )
